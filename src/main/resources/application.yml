@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: acedia
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/acedia
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  sql:
+    init:
+      mode: always
+
+logging:
+  level:
+    root: INFO
+    com.bennyscraper: DEBUG
+  pattern:
+    console: "%d{HH:mm:ss} %highlight(%-5level) %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: ${user.home}/.benny-scraper/logs/benny-scraper.log
+
+scraper:
+  user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+  http-timeout: 10000
+  concurrent-requests: 2
+  save-location: ${user.home}/Documents/BennyScrapedNovels
+  novel-save-location: ${user.home}/Documents/BennyScrapedNovels/Novels
+  manga-save-location: ${user.home}/Documents/BennyScrapedNovels/Manga
+  save-as-single-file: true
+  default-manga-extension: PDF
+
+  selenium-settings:
+    web-driver-timeout: 30000
+
+  site-configurations:
+    - name: novelbin
+      url-pattern: novelbin.me
+      has-pagination: false
+      pagination-type: "?page=%d"
+      has-novel-info-on-different-page: false
+      completed-status: "completed"
+      has-images-for-chapter-content: false # true for manga
+      selenium-site: true # Requires JavaScript for chapter pages; use Selenium for chapter fetch
+      selectors:
+        chapter-links: "ul.list-chapter a"
+        novel-status: "ul.info li:has(h3:contains(Status:)) a"
+        novel-title: "h3.title"
+        novel-author: "ul.info li:has(h3:contains(Author:)) a"
+        novel-description: "div.desc-text p"
+        novel-genres: "ul.info li:has(h3:contains(Genre:)) a"
+        novel-rating: "div.small em strong span:first-child"
+        novel-thumbnail-url: "div.book img"
+        thumbnail-url-attribute: src
+        chapter-title: "h2 a.chr-title"
+        chapter-content: "div#chr-content p"

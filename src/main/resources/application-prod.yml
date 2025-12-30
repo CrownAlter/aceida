@@ -1,0 +1,96 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://${RDS_HOSTNAME:acedia.ce7sussmcfe2.us-east-1.rds.amazonaws.com}:${RDS_PORT:5432}/${RDS_DB_NAME:acedia}
+    username: ${RDS_USERNAME:postgres}
+    password: ${RDS_PASSWORD:postgres1234}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 5  # Reduced from default to save memory
+      minimum-idle: 2        # Reduced to save connections
+      connection-timeout: 10000  # 10 seconds max for connection
+      idle-timeout: 300000   # 5 minutes
+      max-lifetime: 1800000  # 30 minutes
+      initialization-fail-timeout: -1  # Don't fail app if DB unavailable at startup
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+  sql:
+    init:
+      mode: never
+
+# Storage configuration - using local storage (can switch to S3 later)
+storage:
+  type: local
+  local:
+    base-path: /var/app/acedia-storage
+  # Uncomment below to use S3 storage (requires S3 bucket and IAM permissions):
+  # type: s3
+  # s3:
+  #   region: us-east-1
+  #   bucket-name: benny-scraper-novels
+
+# Scraper configuration
+scraper:
+  output-dir: /var/app/scraped-novels
+  selenium:
+    headless: true
+    timeout: 30
+    user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# Server configuration
+server:
+  port: 5000  # CRITICAL: Elastic Beanstalk expects port 5000, not 8080
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/json,application/javascript
+  tomcat:
+    connection-timeout: 20000
+    threads:
+      max: 100  # Reduced from 200 to save memory
+      min-spare: 5  # Reduced from 10
+
+# Logging configuration for production
+logging:
+  level:
+    root: INFO
+    com.bennyscraper: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Management endpoints (Spring Boot Actuator) - CRITICAL for Elastic Beanstalk health checks
+management:
+  server:
+    port: 5000  # Same port as main application
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always  # Show health check details
+      probes:
+        enabled: true  # Enable liveness/readiness probes
+  health:
+    defaults:
+      enabled: true
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+    db:
+      enabled: true  # Monitor database health

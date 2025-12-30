@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/acedia
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        jdbc:
+          batch_size: 20
+        order_inserts: true
+        order_updates: true
+
+  sql:
+    init:
+      mode: always
+
+# LocalStack S3 Configuration
+storage:
+  type: s3
+  s3:
+    endpoint: http://localhost:4566
+    region: us-east-1
+    bucket-name: benny-scraper-novels
+    access-key: test
+    secret-key: test
+    path-style-access: true # Required for LocalStack
