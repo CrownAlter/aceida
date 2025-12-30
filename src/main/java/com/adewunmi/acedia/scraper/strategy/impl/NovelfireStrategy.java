@@ -1,0 +1,135 @@
+package com.adewunmi.acedia.scraper.strategy.impl;
+
+import com.adewunmi.acedia.model.dto.NovelDataBuffer;
+import com.adewunmi.acedia.scraper.ScraperStrategy;
+import lombok.extern.slf4j.Slf4j;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
+import org.springframework.stereotype.Component;
+
+import java.net.URI;
+import java.util.List;
+
+@Slf4j
+@Component("novelfireStrategy")
+public class NovelfireStrategy extends ScraperStrategy {
+    @Override
+    public NovelDataBuffer scrapeNovelData() throws Exception {
+        Document bookDoc;
+        if (siteConfig.isSeleniumSite()) {
+            log.info("Using Selenium to load Novelfire book page");
+            bookDoc = loadHtmlWithSelenium(siteTableOfContents);
+        } else {
+            bookDoc = loadHtml(siteTableOfContents);
+        }
+
+        NovelDataBuffer buffer = fetchNovelDataFromTableOfContents(bookDoc);
+        buffer.setNovelUrl(siteTableOfContents.toString());
+
+        // Chapters page is typically at /book/<slug>/chapters
+        URI chaptersUri = URI.create(siteTableOfContents.toString().replaceAll("/+$", "") + "/chapters");
+        log.info("Loading chapters page: {}", chaptersUri);
+        Document chaptersDoc;
+        if (siteConfig.isSeleniumSite()) {
+            chaptersDoc = loadHtmlWithSelenium(chaptersUri);
+        } else {
+            chaptersDoc = loadHtml(chaptersUri);
+        }
+
+        // Determine pagination and collect chapters across all pages
+        int lastPage = determineLastChaptersPage(chaptersDoc);
+        log.info("Novelfire chapters pagination - last page detected: {}", lastPage);
+
+        java.util.LinkedHashSet<String> chapterSet = new java.util.LinkedHashSet<>();
+        // Page 1
+        chapterSet.addAll(getChapterUrlsInRange(chaptersDoc, baseUri, null, null));
+
+        // Additional pages 2..lastPage
+        for (int i = 2; i <= lastPage; i++) {
+            String pageUrl = chaptersUri.toString() + (chaptersUri.toString().contains("?") ? "&" : "?") + "page=" + i;
+            log.info("Loading chapters page {}: {}", i, pageUrl);
+            Document pageDoc = siteConfig.isSeleniumSite() ? loadHtmlWithSelenium(URI.create(pageUrl)) : loadHtml(URI.create(pageUrl));
+            chapterSet.addAll(getChapterUrlsInRange(pageDoc, baseUri, null, null));
+        }
+
+        List<String> chapterUrls = new java.util.ArrayList<>(chapterSet);
+        if (chapterUrls.isEmpty()) {
+            log.warn("No chapter links found on chapters page(s) - attempting fallback on book page");
+            chapterUrls = getChapterUrlsInRange(bookDoc, baseUri, null, null);
+        }
+        buffer.setChapterUrls(chapterUrls);
+        log.info("Found {} chapter links for Novelfire", chapterUrls.size());
+
+        if (!chapterUrls.isEmpty()) {
+            buffer.setFirstChapter(chapterUrls.get(0));
+            buffer.setCurrentChapterUrl(chapterUrls.get(chapterUrls.size() - 1));
+        }
+        return buffer;
+    }
+
+    private int determineLastChaptersPage(Document chaptersDoc) {
+       try {
+           int maxPage = 1;
+           // Look for common pagination anchors with page numbers
+           Elements pagerLinks = chaptersDoc.select(".pagination a, nav.pagination a, ul.pagination a, a[href*='page=']");
+           for (Element a : pagerLinks) {
+               String href = a.attr("href");
+               String text = a.text();
+               java.util.regex.Matcher mHref = java.util.regex.Pattern.compile("[?&]page=(\\d+)").matcher(href);
+               java.util.regex.Matcher mText = java.util.regex.Pattern.compile("^(\\d+)$").matcher(text.trim());
+               if (mHref.find()) {
+                   int p = Integer.parseInt(mHref.group(1));
+                   if (p > maxPage) maxPage = p;
+               } else if (mText.find()) {
+                   int p = Integer.parseInt(mText.group(1));
+                   if (p > maxPage) maxPage = p;
+               }
+           }
+           return maxPage;
+       } catch (Exception e) {
+           log.debug("Failed to detect last chapters page: {}", e.getMessage());
+           return 1; // default
+       }
+   }
+
+   @Override
+    public NovelDataBuffer fetchNovelDataFromTableOfContents(Document document) {
+        NovelDataBuffer buffer = new NovelDataBuffer();
+        try {
+            // Title
+            Element title = document.selectFirst(siteConfig.getSelectors().getNovelTitle());
+            if (title != null) buffer.setTitle(title.text().trim());
+
+            // Author
+            Element author = document.selectFirst(siteConfig.getSelectors().getNovelAuthor());
+            if (author != null) buffer.setAuthor(author.text().trim());
+
+            // Status
+            Element status = document.selectFirst(siteConfig.getSelectors().getNovelStatus());
+            if (status != null) {
+                String s = status.text().trim();
+                buffer.setNovelStatus(s);
+                buffer.setNovelCompleted(s.toLowerCase().contains(siteConfig.getCompletedStatus()));
+            }
+
+            // Description
+            Elements descEls = document.select(siteConfig.getSelectors().getNovelDescription());
+            for (Element el : descEls) buffer.getDescription().add(el.text().trim());
+
+            // Genres
+            Elements genreEls = document.select(siteConfig.getSelectors().getNovelGenres());
+            for (Element el : genreEls) buffer.getGenres().add(el.text().trim());
+
+            // Thumbnail
+            Element thumb = document.selectFirst(siteConfig.getSelectors().getNovelThumbnailUrl());
+            if (thumb != null) {
+                String attr = siteConfig.getSelectors().getThumbnailUrlAttribute();
+                buffer.setThumbnailUrl(thumb.attr(attr != null && !attr.isBlank() ? attr : "src"));
+            }
+        } catch (Exception e) {
+            log.error("Failed to extract Novelfire book data", e);
+        }
+        return buffer;
+    }
+}

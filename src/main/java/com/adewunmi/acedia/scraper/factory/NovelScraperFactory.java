@@ -21,6 +21,7 @@ public class NovelScraperFactory {
 
     {
         websiteStrategyMap.put("novelbin.me", "novelBinStrategy");
+        websiteStrategyMap.put("novelfire.net", "novelfireStrategy");
     }
 
     public ScraperStrategy createScraper(URI tableOfContentsUri, SiteConfiguration siteConfig) {

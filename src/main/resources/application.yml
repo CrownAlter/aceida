@@ -51,6 +51,29 @@ scraper:
     web-driver-timeout: 30000
 
   site-configurations:
+    - name: novelfire
+      url-pattern: novelfire.net
+      has-pagination: true
+      pagination-type: "?page=%d"
+      has-novel-info-on-different-page: false
+      completed-status: "completed"
+      has-images-for-chapter-content: false
+      selenium-site: true
+      selectors:
+        # Book info page
+        novel-title: "h1.book-title, h1.title, .book-header h1"
+        novel-author: ".book-meta a.author, .author a, .book-header .author a"
+        novel-status: ".book-meta .status, li:has(span:contains(Status)) span.value"
+        novel-description: ".book-summary p, .description p, .book-desc p"
+        novel-genres: ".book-meta .genres a, ul.genres a, .tags a"
+        novel-thumbnail-url: ".book-cover img, .cover img, .book-header img"
+        thumbnail-url-attribute: src
+        # Chapters page
+        chapter-links: ".chapter-list a, ul.chapter-list a, .chapters-list a, a[href*='/chapter-']"
+        # Chapter content page
+        chapter-title: "h1.chapter-title, .chapter-header h1, h2.title"
+        chapter-content: "div.chapter-content p, #chapter-content p, .content-inner p"
+
     - name: novelbin
       url-pattern: novelbin.me
       has-pagination: false
