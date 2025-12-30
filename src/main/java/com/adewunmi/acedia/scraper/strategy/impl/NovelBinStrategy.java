@@ -35,9 +35,18 @@ public class NovelBinStrategy extends ScraperStrategy {
         // Get novel slug from URL (e.g., "shadow-slave" from "https://novelbin.me/novel-book/shadow-slave")
         String novelSlug = extractNovelSlug(siteTableOfContents);
         
+        // Try to extract numeric novelId from the table-of-contents page for the AJAX endpoint
+        String novelId = extractNumericNovelId(document);
+        if (novelId == null || novelId.isBlank()) {
+            log.warn("Could not find numeric novelId on page; falling back to slug '{}'. AJAX may return empty.", novelSlug);
+            novelId = novelSlug; // fallback (may not work on site)
+        } else {
+            log.info("Extracted numeric novelId: {}", novelId);
+        }
+
         // Load chapter list from AJAX endpoint which contains ALL chapters
-        URI ajaxChapterListUri = URI.create("https://novelbin.me/ajax/chapter-archive?novelId=" + novelSlug);
-        log.info("Loading complete chapter list from AJAX endpoint...");
+        URI ajaxChapterListUri = URI.create("https://novelbin.me/ajax/chapter-archive?novelId=" + novelId);
+        log.info("Loading complete chapter list from AJAX endpoint: {}", ajaxChapterListUri);
         
         // Use Selenium for AJAX endpoint too to avoid 403
         Document chapterListDocument;
@@ -50,9 +59,17 @@ public class NovelBinStrategy extends ScraperStrategy {
         
         // Extract chapter URLs from the AJAX response
         List<String> chapterUrls = getChapterUrlsInRange(chapterListDocument, baseUri, null, null);
-        novelData.setChapterUrls(chapterUrls);
         
-        log.info("Found {} chapters from AJAX endpoint", chapterUrls.size());
+        // If AJAX response yielded nothing, fall back to parsing the main page
+        if (chapterUrls.isEmpty()) {
+            String preview = chapterListDocument.title() + " | len=" + chapterListDocument.outerHtml().length();
+            log.warn("AJAX chapter archive returned 0 links. Response title/len: {}", preview);
+            log.info("Falling back to parsing chapter links directly from the main page");
+            chapterUrls = getChapterUrlsInRange(document, baseUri, null, null);
+        }
+
+        novelData.setChapterUrls(chapterUrls);
+        log.info("Found {} chapters (AJAX+fallback)", chapterUrls.size());
         
         // Set the first and last chapter URLs for tracking
         if (!chapterUrls.isEmpty()) {
@@ -74,6 +91,33 @@ public class NovelBinStrategy extends ScraperStrategy {
         String[] segments = path.split("/");
         // Return the last segment (novel slug)
         return segments[segments.length - 1];
+    }
+
+    private String extractNumericNovelId(Document document) {
+        try {
+            // Common patterns: data-novel-id, data-id, input[name=novelId], meta[name=novel-id]
+            Element el = document.selectFirst("[data-novel-id], [data-id], input[name=novelId], meta[name=novel-id]");
+            if (el != null) {
+                String val = el.hasAttr("data-novel-id") ? el.attr("data-novel-id") :
+                             el.hasAttr("data-id") ? el.attr("data-id") :
+                             el.tagName().equalsIgnoreCase("input") ? el.attr("value") :
+                             el.tagName().equalsIgnoreCase("meta") ? el.attr("content") : null;
+                if (val != null && val.matches("\\d+")) {
+                    return val;
+                }
+            }
+            // Try to parse from inline scripts
+            for (Element script : document.select("script")) {
+                String data = script.data();
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("novelId\"?\s*[:=]\s*\"?(\\d+)\"?").matcher(data);
+                if (m.find()) {
+                    return m.group(1);
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Error extracting numeric novelId: {}", e.getMessage());
+        }
+        return null;
     }
 
     @Override
