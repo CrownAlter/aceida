@@ -104,6 +104,15 @@ public abstract class ScraperStrategy {
      * Loads HTML using Selenium WebDriver for JS-rendered pages (uses pool)
      */
     protected Document loadHtmlWithSelenium(URI uri) throws IOException {
+        return loadHtmlWithSelenium(uri, false);
+    }
+    
+    /**
+     * Loads HTML using Selenium WebDriver for JS-rendered pages (uses pool)
+     * @param uri The URI to load
+     * @param isChapterPage Whether this is a chapter content page (affects which selectors to wait for)
+     */
+    protected Document loadHtmlWithSelenium(URI uri, boolean isChapterPage) throws IOException {
         if (webDriverPool == null) {
             throw new IOException("WebDriver pool not initialized - site configuration issue");
         }
@@ -131,19 +140,23 @@ public abstract class ScraperStrategy {
                     }
                 });
                 
-                // Wait for content selector if available
-                String contentSelector = siteConfig.getSelectors().getChapterContent();
-                if (contentSelector != null && !contentSelector.isBlank()) {
-                    // Convert JSoup selector to basic CSS (remove pseudo-selectors if any)
-                    String basicSelector = contentSelector.split(":")[0].trim();
-                    log.debug("Waiting for content selector: {}", basicSelector);
-                    
-                    // Use a shorter timeout for the content check (30s) and handle failure gracefully
-                    org.openqa.selenium.support.ui.WebDriverWait contentWait = 
-                        new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(45));
-                    contentWait.until(org.openqa.selenium.support.ui.ExpectedConditions
-                            .presenceOfElementLocated(org.openqa.selenium.By.cssSelector(basicSelector)));
-                    log.debug("Content selector found successfully");
+                // Only wait for chapter content selector if this is actually a chapter page
+                if (isChapterPage) {
+                    String contentSelector = siteConfig.getSelectors().getChapterContent();
+                    if (contentSelector != null && !contentSelector.isBlank()) {
+                        // Convert JSoup selector to basic CSS (remove pseudo-selectors if any)
+                        String basicSelector = contentSelector.split(":")[0].trim();
+                        log.debug("Waiting for chapter content selector: {}", basicSelector);
+                        
+                        // Use a shorter timeout for the content check (30s) and handle failure gracefully
+                        org.openqa.selenium.support.ui.WebDriverWait contentWait = 
+                            new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(45));
+                        contentWait.until(org.openqa.selenium.support.ui.ExpectedConditions
+                                .presenceOfElementLocated(org.openqa.selenium.By.cssSelector(basicSelector)));
+                        log.debug("Chapter content selector found successfully");
+                    }
+                } else {
+                    log.debug("Not a chapter page - skipping content selector wait");
                 }
             } catch (org.openqa.selenium.TimeoutException e) {
                 log.warn("Selenium timeout waiting for content on {}: {}", uri, e.getMessage());
@@ -567,7 +580,7 @@ public abstract class ScraperStrategy {
             Document document;
             if (siteConfig.isSeleniumSite()) {
                 log.info("Using Selenium to load chapter page: {}", url);
-                document = loadHtmlWithSelenium(URI.create(url));
+                document = loadHtmlWithSelenium(URI.create(url), true); // true = this is a chapter page
             } else {
                 // Use specialized method for chapter pages that may need different settings
                 document = loadChapterHtml(URI.create(url));

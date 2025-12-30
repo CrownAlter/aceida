@@ -113,7 +113,6 @@
             <artifactId>selenium-java</artifactId>
             <version>${selenium.version}</version>
         </dependency>
-
 		<!-- WebDriverManager -->
         <dependency>
             <groupId>io.github.bonigarcia</groupId>
