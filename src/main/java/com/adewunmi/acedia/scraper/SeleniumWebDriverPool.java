@@ -319,6 +319,19 @@ public class SeleniumWebDriverPool {
         options.addArguments("--allow-running-insecure-content");
         options.addArguments("--disable-features=VizDisplayCompositor");
 
+        // Proxy support via environment variables
+        try {
+            String proxyUrl = System.getenv("HTTPS_PROXY");
+            if (proxyUrl == null || proxyUrl.isBlank()) proxyUrl = System.getenv("HTTP_PROXY");
+            if (proxyUrl != null && !proxyUrl.isBlank()) {
+                log.info("Using proxy for Selenium: {}", proxyUrl);
+                // Prefer chrome arg form which supports scheme
+                options.addArguments("--proxy-server=" + proxyUrl);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to configure proxy for Selenium: {}", e.getMessage());
+        }
+
         // Page load strategy
         options.setPageLoadStrategy(org.openqa.selenium.PageLoadStrategy.EAGER); // Changed from NORMAL to EAGER
 

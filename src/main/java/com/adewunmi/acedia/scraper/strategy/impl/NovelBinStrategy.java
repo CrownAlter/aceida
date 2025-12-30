@@ -17,6 +17,69 @@ import java.util.List;
 @Component("novelBinStrategy")
 public class NovelBinStrategy extends ScraperStrategy {
 
+    /**
+     * Loads the TOC page and activates the 'Chapters' tab so that the list is present in DOM.
+     * Only used when Selenium is available.
+     */
+    private Document loadTocAndActivateChaptersTab(URI uri) throws java.io.IOException {
+        if (webDriverPool == null) {
+            return loadHtml(uri); // fallback; won't click the tab
+        }
+        org.openqa.selenium.WebDriver driver = null;
+        try {
+            driver = webDriverPool.borrowDriver();
+            driver.get(uri.toString());
+
+            org.openqa.selenium.support.ui.WebDriverWait wait =
+                new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(45));
+            // Wait for base page load
+            try {
+                wait.until(d -> {
+                    try {
+                        return ((org.openqa.selenium.JavascriptExecutor) d)
+                            .executeScript("return document.readyState").equals("complete");
+                    } catch (Exception ex) { return false; }
+                });
+            } catch (org.openqa.selenium.TimeoutException te) {
+                log.warn("Timeout waiting for document.readyState on TOC page");
+            }
+
+            // Try to click the 'Chapters' tab
+            try {
+                org.openqa.selenium.By tabSelector = org.openqa.selenium.By.cssSelector("a[href='#tab-chapters-title'], [data-target='#tab-chapters-title']");
+                org.openqa.selenium.WebElement tab = wait.until(org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated(tabSelector));
+                try { tab.click(); } catch (Exception clickEx) {
+                    // Fallback: execute JS click
+                    ((org.openqa.selenium.JavascriptExecutor) driver).executeScript("arguments[0].click();", tab);
+                }
+            } catch (Exception e) {
+                log.debug("Couldn't click 'Chapters' tab: {}", e.toString());
+            }
+
+            // Wait for chapter list to appear using configured selector
+            String chaptersCss = siteConfig.getSelectors().getChapterLinks();
+            if (chaptersCss != null && !chaptersCss.isBlank()) {
+                String basic = chaptersCss.split(":")[0].trim();
+                try {
+                    wait.until(org.openqa.selenium.support.ui.ExpectedConditions.presenceOfElementLocated(
+                        org.openqa.selenium.By.cssSelector(basic)));
+                } catch (org.openqa.selenium.TimeoutException te) {
+                    log.warn("Timeout waiting for chapter links selector: {}", basic);
+                }
+            }
+
+            // Small delay for content to render
+            try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); }
+
+            String html = driver.getPageSource();
+            return org.jsoup.Jsoup.parse(html, uri.toString());
+        } catch (Exception e) {
+            throw new java.io.IOException("Failed to activate chapters tab: " + e.getMessage(), e);
+        } finally {
+            if (driver != null) webDriverPool.returnDriver(driver);
+        }
+    }
+
     @Override
     public NovelDataBuffer scrapeNovelData() throws Exception {
         // For AWS environments, use Selenium from the start to avoid 403 errors
@@ -64,8 +127,25 @@ public class NovelBinStrategy extends ScraperStrategy {
         if (chapterUrls.isEmpty()) {
             String preview = chapterListDocument.title() + " | len=" + chapterListDocument.outerHtml().length();
             log.warn("AJAX chapter archive returned 0 links. Response title/len: {}", preview);
-            log.info("Falling back to parsing chapter links directly from the main page");
-            chapterUrls = getChapterUrlsInRange(document, baseUri, null, null);
+            if (preview.toLowerCase().contains("just a moment")) {
+                log.warn("Cloudflare challenge detected on AJAX endpoint");
+            }
+            log.info("Falling back to parsing chapter links directly from the main page (clicking 'Chapters' tab if needed)");
+            Document tocWithChapters = document;
+            // Save what we got from AJAX for diagnostics
+            maybeDumpDocument(chapterListDocument, "novelbin_ajax");
+            try {
+                if (siteConfig.isSeleniumSite()) {
+                    tocWithChapters = loadTocAndActivateChaptersTab(siteTableOfContents);
+                }
+            } catch (Exception e) {
+                log.warn("Failed to activate 'Chapters' tab via Selenium: {}", e.toString());
+            }
+            if (tocWithChapters != null && tocWithChapters.title() != null && tocWithChapters.title().toLowerCase().contains("just a moment")) {
+                log.warn("Cloudflare challenge detected on TOC page");
+            }
+            maybeDumpDocument(tocWithChapters, "novelbin_toc_after_tab");
+            chapterUrls = getChapterUrlsInRange(tocWithChapters, baseUri, null, null);
         }
 
         novelData.setChapterUrls(chapterUrls);

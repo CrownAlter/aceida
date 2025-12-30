@@ -29,6 +29,75 @@ import java.util.concurrent.*;
 @Slf4j
 public abstract class ScraperStrategy {
 
+    // Debug dump settings via environment variables
+    private final boolean debugDumpEnabled = "true".equalsIgnoreCase(System.getenv().getOrDefault("SCRAPER_DEBUG_DUMP", "false"));
+    private final String debugDumpDir = System.getenv().getOrDefault("SCRAPER_DEBUG_DIR",
+            System.getProperty("user.home") + "/.benny-scraper/debug");
+
+    // Proxy settings via environment variables (HTTPS takes precedence)
+    private final String httpsProxyEnv = System.getenv("HTTPS_PROXY");
+    private final String httpProxyEnv = System.getenv("HTTP_PROXY");
+
+    protected static class ProxyInfo {
+        final String scheme; // http or https
+        final String host;
+        final int port;
+        final String originalUrl;
+        ProxyInfo(String scheme, String host, int port, String originalUrl) {
+            this.scheme = scheme; this.host = host; this.port = port; this.originalUrl = originalUrl;
+        }
+    }
+
+    protected ProxyInfo resolveProxy() {
+        String proxyUrl = httpsProxyEnv != null && !httpsProxyEnv.isBlank() ? httpsProxyEnv : httpProxyEnv;
+        if (proxyUrl == null || proxyUrl.isBlank()) return null;
+        try {
+            java.net.URI p = java.net.URI.create(proxyUrl);
+            String scheme = p.getScheme() != null ? p.getScheme() : "http";
+            String host = p.getHost();
+            int port = p.getPort() > 0 ? p.getPort() : ("https".equalsIgnoreCase(scheme) ? 443 : 80);
+            if (host == null) {
+                // Handle host:port without scheme
+                if (!proxyUrl.contains("://")) {
+                    String[] parts = proxyUrl.split(":");
+                    if (parts.length == 2) {
+                        host = parts[0];
+                        port = Integer.parseInt(parts[1]);
+                        scheme = "http";
+                    }
+                }
+            }
+            if (host != null) return new ProxyInfo(scheme, host, port, proxyUrl);
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    protected void applyProxyToJsoup(Connection connection) {
+        ProxyInfo proxy = resolveProxy();
+        if (proxy != null && proxy.host != null) {
+            try {
+                connection.proxy(proxy.host, proxy.port);
+                log.info("Using proxy for Jsoup: {}:{} (scheme: {})", proxy.host, proxy.port, proxy.scheme);
+            } catch (Exception e) {
+                log.warn("Failed to apply proxy to Jsoup: {}", e.getMessage());
+            }
+        }
+    }
+
+    protected void maybeDumpDocument(Document doc, String label) {
+        if (!debugDumpEnabled || doc == null) return;
+        try {
+            java.nio.file.Path dir = java.nio.file.Paths.get(debugDumpDir);
+            java.nio.file.Files.createDirectories(dir);
+            String safeLabel = label.replaceAll("[^a-zA-Z0-9-_]", "_");
+            String fileName = String.format("%s/%s_%d.html", dir.toString(), safeLabel, System.currentTimeMillis());
+            java.nio.file.Files.writeString(java.nio.file.Paths.get(fileName), doc.outerHtml());
+            log.info("Debug dump saved: {} (title='{}', len={})", fileName, doc.title(), doc.outerHtml().length());
+        } catch (Exception e) {
+            log.warn("Failed to dump document: {}", e.getMessage());
+        }
+    }
+
     protected static final int MAX_RETRIES = 6;
     protected static final int MINIMUM_PARAGRAPH_THRESHOLD = 5;
     protected static final int TOTAL_POSSIBLE_PAGINATION_TABS = 6;
@@ -173,7 +242,11 @@ public abstract class ScraperStrategy {
             log.debug("Page source retrieved, length: {} chars", pageSource.length());
             
             // Parse with Jsoup so downstream logic can reuse selectors
-            return org.jsoup.Jsoup.parse(pageSource, uri.toString());
+            Document parsed = org.jsoup.Jsoup.parse(pageSource, uri.toString());
+            if (parsed.title() != null && parsed.title().toLowerCase().contains("just a moment")) {
+                maybeDumpDocument(parsed, "cloudflare_selenium");
+            }
+            return parsed;
             
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -241,7 +314,11 @@ public abstract class ScraperStrategy {
                 // Always add referrer for chapter pages to look like navigation from the site
                 connection.referrer(referrer);
 
+                applyProxyToJsoup(connection);
                 Document doc = connection.get();
+                if (doc.title() != null && doc.title().toLowerCase().contains("just a moment")) {
+                    maybeDumpDocument(doc, "cloudflare_jsoup_chapter");
+                }
                 Thread.sleep(500 + random.nextInt(1500));
                 log.debug("Successfully loaded chapter HTML from: {}", uri);
                 return doc;
