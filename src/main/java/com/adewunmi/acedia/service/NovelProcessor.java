@@ -113,6 +113,8 @@ public class NovelProcessor {
 
     private void addNewNovel(URI tableOfContentsUri, ScraperStrategy strategy, Configuration config, Integer chapterNumber, Integer chapterLimit, Integer chapterStart, Integer chapterEnd) throws Exception {
         try (NovelDataBuffer novelDataBuffer = strategy.scrapeNovelData()) {
+            // Pass chapter limit to strategy for pagination optimization
+            novelDataBuffer.setChapterLimit(chapterLimit);
 
             // Validate scraped data
             if (novelDataBuffer.getTitle() == null || novelDataBuffer.getTitle().isEmpty()) {

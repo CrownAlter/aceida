@@ -347,10 +347,10 @@ public class SeleniumWebDriverPool {
             long elapsedTime = System.currentTimeMillis() - startTime;
             log.info("ChromeDriver started successfully in {}ms", elapsedTime);
 
-            // Set timeouts
-            driver.manage().timeouts().implicitlyWait(java.time.Duration.ofSeconds(10));
-            driver.manage().timeouts().pageLoadTimeout(java.time.Duration.ofSeconds(60));
-            driver.manage().timeouts().scriptTimeout(java.time.Duration.ofSeconds(30));
+            // Set timeouts - reduced to prevent stalling
+            driver.manage().timeouts().implicitlyWait(java.time.Duration.ofSeconds(5));
+            driver.manage().timeouts().pageLoadTimeout(java.time.Duration.ofSeconds(45));
+            driver.manage().timeouts().scriptTimeout(java.time.Duration.ofSeconds(20));
 
             // Execute stealth scripts to hide automation
             try {

@@ -28,6 +28,7 @@ public class NovelDataBuffer implements AutoCloseable {
     private String firstChapter;
     private byte[] thumbnailImage;
     private String novelUrl;
+    private Integer chapterLimit; // For early-exit pagination optimization
 
     @Override
     public void close() {

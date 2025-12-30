@@ -194,9 +194,9 @@ public abstract class ScraperStrategy {
             log.debug("Loading page with Selenium: {}", uri);
             driver.get(uri.toString());
 
-            // Wait for page ready with longer timeout for slow-loading pages
+            // Wait for page ready with reduced timeout to prevent stalling
             org.openqa.selenium.support.ui.WebDriverWait wait = 
-                new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(60));
+                new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(30));
             
             try {
                 // Wait for document ready
@@ -217,9 +217,9 @@ public abstract class ScraperStrategy {
                         String basicSelector = contentSelector.split(":")[0].trim();
                         log.debug("Waiting for chapter content selector: {}", basicSelector);
                         
-                        // Use a shorter timeout for the content check (30s) and handle failure gracefully
+                        // Use a shorter timeout for the content check and handle failure gracefully
                         org.openqa.selenium.support.ui.WebDriverWait contentWait = 
-                            new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(45));
+                            new org.openqa.selenium.support.ui.WebDriverWait(driver, java.time.Duration.ofSeconds(20));
                         contentWait.until(org.openqa.selenium.support.ui.ExpectedConditions
                                 .presenceOfElementLocated(org.openqa.selenium.By.cssSelector(basicSelector)));
                         log.debug("Chapter content selector found successfully");
@@ -235,8 +235,8 @@ public abstract class ScraperStrategy {
                 // Continue anyway - we'll check for content later
             }
 
-            // Add delay to ensure all dynamic content loads and avoid rate limiting
-            Thread.sleep(2000 + random.nextInt(2000)); // 2-4 seconds delay
+            // Short delay to allow dynamic content to render
+            Thread.sleep(1000 + random.nextInt(1000)); // 1-2 seconds delay
 
             String pageSource = driver.getPageSource();
             log.debug("Page source retrieved, length: {} chars", pageSource.length());

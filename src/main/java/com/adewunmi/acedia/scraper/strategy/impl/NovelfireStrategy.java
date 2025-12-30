@@ -16,10 +16,17 @@ import java.util.List;
 public class NovelfireStrategy extends ScraperStrategy {
     @Override
     public NovelDataBuffer scrapeNovelData() throws Exception {
+        log.info("Starting Novelfire scrape for: {}", siteTableOfContents);
         Document bookDoc;
         if (siteConfig.isSeleniumSite()) {
             log.info("Using Selenium to load Novelfire book page");
-            bookDoc = loadHtmlWithSelenium(siteTableOfContents);
+            try {
+                bookDoc = loadHtmlWithSelenium(siteTableOfContents);
+                log.info("Book page loaded successfully, title: {}", bookDoc.title());
+            } catch (Exception e) {
+                log.error("Failed to load book page with Selenium: {}", e.getMessage());
+                throw e;
+            }
         } else {
             bookDoc = loadHtml(siteTableOfContents);
         }
@@ -45,12 +52,25 @@ public class NovelfireStrategy extends ScraperStrategy {
         // Page 1
         chapterSet.addAll(getChapterUrlsInRange(chaptersDoc, baseUri, null, null));
 
-        // Additional pages 2..lastPage
+        // Additional pages 2..lastPage (with early exit if we have enough chapters)
         for (int i = 2; i <= lastPage; i++) {
+            // Early exit if we already have enough chapters for the limit
+            if (buffer.getChapterLimit() != null && chapterSet.size() >= buffer.getChapterLimit()) {
+                log.info("Early exit from pagination: collected {} chapters (limit: {})", chapterSet.size(), buffer.getChapterLimit());
+                break;
+            }
+            
             String pageUrl = chaptersUri.toString() + (chaptersUri.toString().contains("?") ? "&" : "?") + "page=" + i;
-            log.info("Loading chapters page {}: {}", i, pageUrl);
-            Document pageDoc = siteConfig.isSeleniumSite() ? loadHtmlWithSelenium(URI.create(pageUrl)) : loadHtml(URI.create(pageUrl));
-            chapterSet.addAll(getChapterUrlsInRange(pageDoc, baseUri, null, null));
+            log.info("Loading chapters page {}/{}: {}", i, lastPage, pageUrl);
+            try {
+                Document pageDoc = siteConfig.isSeleniumSite() ? loadHtmlWithSelenium(URI.create(pageUrl)) : loadHtml(URI.create(pageUrl));
+                List<String> pageChapters = getChapterUrlsInRange(pageDoc, baseUri, null, null);
+                chapterSet.addAll(pageChapters);
+                log.info("Page {} yielded {} chapters (total so far: {})", i, pageChapters.size(), chapterSet.size());
+            } catch (Exception e) {
+                log.warn("Failed to load chapters page {}: {}", i, e.getMessage());
+                // Continue to next page instead of failing entirely
+            }
         }
 
         List<String> chapterUrls = new java.util.ArrayList<>(chapterSet);
