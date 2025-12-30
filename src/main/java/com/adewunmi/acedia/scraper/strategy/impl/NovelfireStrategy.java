@@ -72,23 +72,32 @@ public class NovelfireStrategy extends ScraperStrategy {
        try {
            int maxPage = 1;
            // Look for common pagination anchors with page numbers
-           Elements pagerLinks = chaptersDoc.select(".pagination a, nav.pagination a, ul.pagination a, a[href*='page=']");
+           Elements pagerLinks = chaptersDoc.select("ul.pagination a");
+           log.info("Found {} pagination links", pagerLinks.size());
            for (Element a : pagerLinks) {
                String href = a.attr("href");
-               String text = a.text();
+               String text = a.text().trim();
+               log.debug("Pagination link: text='{}', href='{}'", text, href);
+               
+               // Try to extract page number from href first
                java.util.regex.Matcher mHref = java.util.regex.Pattern.compile("[?&]page=(\\d+)").matcher(href);
-               java.util.regex.Matcher mText = java.util.regex.Pattern.compile("^(\\d+)$").matcher(text.trim());
                if (mHref.find()) {
                    int p = Integer.parseInt(mHref.group(1));
                    if (p > maxPage) maxPage = p;
-               } else if (mText.find()) {
-                   int p = Integer.parseInt(mText.group(1));
+                   log.debug("Found page {} in href", p);
+               }
+               
+               // Also check text if it's a number
+               if (text.matches("^\\d+$")) {
+                   int p = Integer.parseInt(text);
                    if (p > maxPage) maxPage = p;
+                   log.debug("Found page {} in text", p);
                }
            }
+           log.info("Determined last chapters page: {}", maxPage);
            return maxPage;
        } catch (Exception e) {
-           log.debug("Failed to detect last chapters page: {}", e.getMessage());
+           log.warn("Failed to detect last chapters page: {}", e.getMessage());
            return 1; // default
        }
    }
