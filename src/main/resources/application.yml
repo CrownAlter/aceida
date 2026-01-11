@@ -1,96 +1,96 @@
 spring:
-  application:
-    name: acedia
-
   datasource:
-    url: jdbc:postgresql://localhost:5432/acedia
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${RDS_HOSTNAME:acedia.ce7sussmcfe2.us-east-1.rds.amazonaws.com}:${RDS_PORT:5432}/${RDS_DB_NAME:acedia}
+    username: ${RDS_USERNAME:postgres}
+    password: ${RDS_PASSWORD:postgres1234}
     driver-class-name: org.postgresql.Driver
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 5
-
+      maximum-pool-size: 5 # Reduced from default to save memory
+      minimum-idle: 2 # Reduced to save connections
+      connection-timeout: 10000 # 10 seconds max for connection
+      idle-timeout: 300000 # 5 minutes
+      max-lifetime: 1800000 # 30 minutes
+      initialization-fail-timeout: -1 # Don't fail app if DB unavailable at startup
   jpa:
     hibernate:
       ddl-auto: update
     show-sql: false
     properties:
       hibernate:
-        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
         jdbc:
           batch_size: 20
         order_inserts: true
         order_updates: true
-
   sql:
     init:
-      mode: always
+      mode: never
 
+# Storage configuration - using local storage (can switch to S3 later)
+storage:
+  type: local
+  local:
+    base-path: /var/app/acedia-storage
+  # Uncomment below to use S3 storage (requires S3 bucket and IAM permissions):
+  # type: s3
+  # s3:
+  #   region: us-east-1
+  #   bucket-name: benny-scraper-novels
+
+# Scraper configuration
+scraper:
+  output-dir: /var/app/scraped-novels
+  selenium:
+    headless: true
+    timeout: 30
+    user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# Server configuration
+server:
+  port: 5000 # CRITICAL: Elastic Beanstalk expects port 5000, not 8080
+  shutdown: graceful
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/json,application/javascript
+  tomcat:
+    connection-timeout: 20000
+    threads:
+      max: 100 # Reduced from 200 to save memory
+      min-spare: 5 # Reduced from 10
+
+# Logging configuration for production
 logging:
   level:
     root: INFO
-    com.bennyscraper: DEBUG
+    com.bennyscraper: INFO
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN
+    org.hibernate.type.descriptor.sql.BasicBinder: WARN
   pattern:
-    console: "%d{HH:mm:ss} %highlight(%-5level) %msg%n"
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
     file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
-  file:
-    name: ${user.home}/.benny-scraper/logs/benny-scraper.log
 
-scraper:
-  user-agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
-  http-timeout: 10000
-  concurrent-requests: 2
-  save-location: ${user.home}/Documents/BennyScrapedNovels
-  novel-save-location: ${user.home}/Documents/BennyScrapedNovels/Novels
-  manga-save-location: ${user.home}/Documents/BennyScrapedNovels/Manga
-  save-as-single-file: true
-  default-manga-extension: PDF
-
-  selenium-settings:
-    web-driver-timeout: 30000
-
-  site-configurations:
-    - name: novelfire
-      url-pattern: novelfire.net
-      has-pagination: true
-      pagination-type: "?page=%d"
-      has-novel-info-on-different-page: false
-      completed-status: "completed"
-      has-images-for-chapter-content: false
-      selenium-site: true
-      selectors:
-        # Book info page - VERIFIED selectors
-        novel-title: "h1.novel-title"
-        novel-author: "div.author a.property-item"
-        novel-status: "div.header-stats span"
-        novel-description: "div.summary p"
-        novel-genres: "a.property-item[href*='/genre-']"
-        novel-thumbnail-url: "div.book img, .main-head img"
-        thumbnail-url-attribute: src
-        # Chapters page - CORRECT selectors
-        chapter-links: "ul.chapter-list a, .chapter-list a"
-        # Chapter content page - CORRECT selectors
-        chapter-title: "h1"
-        chapter-content: "div.box-detail p, div.reading-content p"
-
-    - name: novelbin
-      url-pattern: novelbin.me
-      has-pagination: false
-      pagination-type: "?page=%d"
-      has-novel-info-on-different-page: false
-      completed-status: "completed"
-      has-images-for-chapter-content: false # true for manga
-      selenium-site: true # Requires JavaScript for chapter pages; use Selenium for chapter fetch
-      selectors:
-        chapter-links: "ul.list-chapter a"
-        novel-status: "ul.info li:has(h3:contains(Status:)) a"
-        novel-title: "h3.title"
-        novel-author: "ul.info li:has(h3:contains(Author:)) a"
-        novel-description: "div.desc-text p"
-        novel-genres: "ul.info li:has(h3:contains(Genre:)) a"
-        novel-rating: "div.small em strong span:first-child"
-        novel-thumbnail-url: "div.book img"
-        thumbnail-url-attribute: src
-        chapter-title: "h2 a.chr-title"
-        chapter-content: "div#chr-content p"
+# Management endpoints (Spring Boot Actuator) - CRITICAL for Elastic Beanstalk health checks
+management:
+  server:
+    port: 5000 # Same port as main application
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always # Show health check details
+      probes:
+        enabled: true # Enable liveness/readiness probes
+  health:
+    defaults:
+      enabled: true
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+    db:
+      enabled: true # Monitor database health
